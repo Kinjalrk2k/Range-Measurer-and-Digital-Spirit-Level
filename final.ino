@@ -2,23 +2,35 @@
 #include <Wire.h>
 #include <MPU6050.h>
 
+const int MPU_addr=0x68;
+int16_t axis_X,axis_Y,axis_Z;
+int minVal=265;
+int maxVal=402;
+double x;
+double y;
+double z;
+
+float error = 0;
+
 /*  PINS  */
 //  for Ultrasonic
-const int trigPin = 9;
-const int echoPin = 10;
+const int trigPin = 3;
+const int echoPin = 4;
 
-//  for LCD
+/*  for LCD */
 const int reg = 0;
 const int ebl = 1;
-const int D4 = 2;
-const int D5 = 3;
-const int D6 = 4;
-const int D7 = 5;
+const int D4 = 8;
+const int D5 = 9;
+const int D6 = 10;
+const int D7 = 11;
 
-// initialize the library with the numbers of the interface pins
+const int swt = 13;
 
-LiquidCrystal lcd(0, 1, 2, 3, 4, 5); /// REGISTER SELECT PIN,ENABLE PIN,D4 PIN,D5 PIN, D6 PIN, D7 PIN
+// initialize the LCD library with the numbers of the interface pins
+LiquidCrystal lcd(reg, ebl, D4, D5, D6, D7); // REGISTER SELECT PIN, ENABLE PIN, D4 PIN, D5 PIN, D6 PIN, D7 PIN
 
+//  initialize a MPU6050 object for the gyro
 MPU6050 mpu;
 
 // Timers
@@ -50,18 +62,30 @@ float calc_dist(){
 }
 
 float calc_angle(){
-  timer = millis();
+  Wire.beginTransmission(MPU_addr);
+  Wire.write(0x3B);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_addr,14,true);
+  axis_X=Wire.read()<<8|Wire.read();
+  axis_Y=Wire.read()<<8|Wire.read();
+  axis_Z=Wire.read()<<8|Wire.read();
+  int xAng = map(axis_X,minVal,maxVal,-90,90);
+  int yAng = map(axis_Y,minVal,maxVal,-90,90);
+  int zAng = map(axis_Z,minVal,maxVal,-90,90);
+  x= RAD_TO_DEG * (atan2(-yAng, -zAng)+PI);
+  y= RAD_TO_DEG * (atan2(-xAng, -zAng)+PI);
+  z= RAD_TO_DEG * (atan2(-yAng, -xAng)+PI);
+  return abs((360-z));  
+}
 
-  // Read normalized values
-  Vector norm = mpu.readNormalizeGyro();
-
-  // Calculate Pitch, Roll and Yaw
-  pitch = pitch + norm.YAxis * timeStep;
-  roll = roll + norm.XAxis * timeStep;
-  yaw = yaw + norm.ZAxis * timeStep;
-
-  delay((timeStep*1000) - (millis() - timer));
-  return pitch;  
+void callibrate_gyro(){
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Callibrating");
+  lcd.setCursor(0, 1);
+  lcd.print("Please Wait!");
+  delay(5000);
+  error = calc_angle();
 }
 
 void display_lcd(float dist, float ang){
@@ -72,13 +96,14 @@ void display_lcd(float dist, float ang){
   lcd.print(" cm");
   lcd.setCursor(0, 1);
   lcd.print("Angle: ");
-  lcd.print(ang);
-  lcd.print((char)223);
+  lcd.print(abs(ang));
+  lcd.print((char)223); //  printing the degree symbol
 
   Serial.print("Distance: ");
   Serial.print(dist);
   Serial.print("\tAngle: ");
-  Serial.println(ang);
+  Serial.println(abs(ang));
+//  Serial.println((char)223);  //  printing the degree symbol
 
   delay(750);
   lcd.setCursor(0, 0);
@@ -88,33 +113,54 @@ void setup() {
   // put your setup code here, to run once:
 
   lcd.begin(8, 2);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing");
+  lcd.setCursor(0, 1);
+  lcd.print("Please Wait!");
   
 //  Initialize MPU6050
-  while(!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G))
-  {
-    Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
-    delay(500);
-  }
-  
-  // Calibrate gyroscope. The calibration must be at rest.
-  // If you don't want calibrate, comment this line.
-  mpu.calibrateGyro();
+//  while(!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G))
+//  {
+//    Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
+//    delay(500);
+//  }
+//  
+//  // Calibrate gyroscope. The calibration must be at rest.
+//  // If you don't want calibrate, comment this line.
+//  mpu.calibrateGyro();
+//
+//  // Set threshold sensivty. Default 3.
+//  // If you don't want use threshold, comment this line or set 0.
+//  mpu.setThreshold(3);
 
-  // Set threshold sensivty. Default 3.
-  // If you don't want use threshold, comment this line or set 0.
-  mpu.setThreshold(3);
+  Wire.begin();
+  Wire.beginTransmission(MPU_addr);
+  Wire.write(0x6B);
+  Wire.write(0);
+  Wire.endTransmission(true);
 
   pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
   pinMode(echoPin, INPUT); // Sets the echoPin as an Input
-//  Serial.begin(9600); // Starts the serial communication
+  pinMode(swt, INPUT);
+//  Serial.begin(9600); // Starts the serial communication (cannot be used with LCD all together)
+
+  
+  callibrate_gyro();
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+  if(digitalRead(swt) == 1){
+    callibrate_gyro();
+  }
+
+//  Serial.print(digitalRead(swt));
+  
   float dist = calc_dist();
   float ang = calc_angle();
 
-  display_lcd(dist, ang);
- 
-  
+  display_lcd(dist, ang - error);
 }
