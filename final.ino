@@ -55,7 +55,7 @@ float calc_dist(){
   // Reads the echoPin, returns the sound wave travel time in microseconds
   float duration = pulseIn(echoPin, HIGH);
   
-  // Calculating the distance
+  // Calculating the distance in cm
   float distance = duration*0.034/2;
 
   return distance;
